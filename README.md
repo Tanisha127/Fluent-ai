@@ -1,173 +1,108 @@
-# 🎙️ FluentAI — AI-Powered Speech Confidence Platform
+# FluentAI
 
-> For the 70+ million people who stammer worldwide.  
-> **Not therapy videos. Not static blogs. Real AI. Real progress. Real confidence.**
-
----
-
-## 🏆 HACKATHON PITCH SCRIPT (2 Minutes)
-
-**[Open with this — DO NOT SKIP]**
-
-> *"Imagine being brilliant at your job, passionate about your ideas, and completely capable — but the moment you open your mouth in an interview, your words disappear. Not because you don't know the answer. Because you stammer. That's the reality for 70 million people."*
-
-> *"Today's solutions? Generic YouTube videos. $150/hour therapy sessions. Static blogs. None of them know YOUR voice. None of them practice WITH you."*
-
-> *"FluentAI bridges therapy, AI, and community into one platform. Here's what it does:"*
-
-**[Live Demo — 3 WOW Features]**
-
-1. **Real-time Speech Analysis** — User reads a paragraph. AI immediately returns: fluency %, blocks count, speech rate, confidence score (0-100), and a personalized 4-step therapy plan. Not generic advice. YOUR data.
-
-2. **AI Roleplay Interview Mode** — Select "Job Interview." An AI interviewer asks real questions. The user responds verbally. Live stress indicators and fluency metrics appear in real-time. When done: detailed session report. This is practicing your most feared situation — without fear of judgment.
-
-3. **Anxiety Heatmap** — After 2 weeks of use, the AI identifies WHICH situations trigger stammering most. Phone calls? Interviews? Class presentations? The system detects the pattern and adapts the therapy plan.
-
-**[Close]**
-
-> *"We're not replacing speech therapists. We're making their work accessible — 24/7, personalized, and free at scale. Built on React, Node.js, Web Speech API, and GPT-4. The architecture scales to 1 million users. The roadmap extends to autism, aphasia, and selective mutism. One platform. Every voice."*
+A web platform to help people who stammer practice speaking in real-world scenarios. Built with React, Node.js, and the OpenAI API.
 
 ---
 
-## 🚀 Quick Start
+## What it does
 
-### Prerequisites
+FluentAI gives users a private space to practice speaking and track how they improve over time. The core features are:
+
+**Speech analysis** — Record yourself speaking and get back a breakdown of your fluency, speech rate, pause patterns, and an overall confidence score. The AI generates a short practice plan based on what it finds.
+
+**Interview roleplay** — Practice a job interview, presentation, or phone call with an AI that responds conversationally. Your fluency metrics update live as you speak. At the end you get a session summary you can review or share with a therapist.
+
+**Situation tracking** — Log which scenarios feel most difficult. After enough data, the app surfaces patterns — whether phone calls are harder than interviews, for example — and adjusts what it prioritizes in practice sessions.
+
+---
+
+## Getting started
+
+**Requirements**
 - Node.js 18+
-- MongoDB (optional — runs in demo mode without it)
-- OpenAI API key (optional — enables real AI analysis)
+- MongoDB
+- An OpenAI API key (optional — enables AI analysis; falls back to heuristics without it)
 
-### Installation
+**Setup**
 
 ```bash
-# 1. Clone and install
 git clone <repo>
 cd fluent-ai
 npm run install:all
 
-# 2. Configure backend
 cd backend
 cp .env.example .env
-# Edit .env with your keys
+# Add your keys to .env
 
-# 3. Run development servers
 cd ..
 npm run dev
-# Frontend: http://localhost:3000
-# Backend: http://localhost:5000
 ```
 
-### Demo Credentials
-- Email: `demo@fluent.ai`
-- Password: `demo1234`
+Frontend runs at `http://localhost:3000`, backend at `http://localhost:5000`.
 
 ---
 
-## 🏗️ Architecture
+## Tech stack
+
+| Layer | Tools |
+| Frontend | React 18, Vite, Tailwind CSS, Recharts, Socket.io-client |
+| Backend | Node.js, Express, Socket.io, MongoDB, PDFKit, JWT |
+| AI | OpenAI GPT-4o-mini, Web Speech API (browser), Whisper (optional) |
+| Vercel (frontend), Render (backend), MongoDB Atlas(Database) |
+
+---
+
+## Project structure
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    CLIENT (React + Vite)                  │
-│  Landing → Auth → Dashboard → Analysis → Coaching →      │
-│  Roleplay → Therapy → Progress → Community → Reports     │
-└─────────────────┬───────────────────────────────────────┘
-                  │ REST API + WebSocket (Socket.io)
-┌─────────────────▼───────────────────────────────────────┐
-│              BACKEND (Node.js + Express)                  │
-│                                                           │
-│  /auth    /analysis   /roleplay   /therapy               │
-│  /community  /reports  /progress  /users                 │
-│                                                           │
-│  ┌─────────────────────────────────────┐                 │
-│  │          AI SERVICES LAYER           │                 │
-│  │  • Speech Analysis (heuristic/GPT)  │                 │
-│  │  • Roleplay AI (GPT-4o-mini)        │                 │
-│  │  • PDF Report Generator (PDFKit)    │                 │
-│  │  • Real-time Hints (Socket.io)      │                 │
-│  └─────────────────────────────────────┘                 │
-└─────────────────┬───────────────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────────────┐
-│                   DATABASE (MongoDB)                       │
-│  users • speech_analyses • therapy_sessions              │
-│  roleplay_sessions • situation_logs • community_posts    │
-└─────────────────────────────────────────────────────────┘
-                  │
-┌─────────────────▼───────────────────────────────────────┐
-│               EXTERNAL AI SERVICES                        │
-│  • OpenAI GPT-4o-mini (analysis + roleplay)              │
-│  • Web Speech API (browser STT, free)                    │
-│  • Whisper API (audio transcription, optional)           │
-└─────────────────────────────────────────────────────────┘
+fluent-ai/
+├── frontend/          # React app
+│   └── src/
+│       ├── pages/     # Dashboard, Analysis, Roleplay, Progress, etc.
+│       └── components/
+├── backend/           # Express API
+│   └── src/
+│       ├── routes/    # auth, analysis, roleplay, therapy, reports
+│       └── services/  # AI wrappers, PDF generation, socket handlers
+└── shared/            # Types and constants
 ```
 
 ---
 
-## ✨ Feature Map
+## API overview
 
-| Feature | Tech | WOW Factor |
-|---------|------|-----------|
-| Speech Analysis | Web Speech API + GPT | Confidence Score 0-100 |
-| Live Coaching | Socket.io + heuristics | Real-time floating hints |
-| AI Roleplay | GPT-4o-mini chat | Full interview simulation |
-| Anxiety Heatmap | Recharts + MongoDB | Pattern detection over time |
-| Therapy Generator | GPT + rule engine | Personalized daily plan |
-| Gamification | XP + badges + streaks | Habit loop psychology |
-| Community | Socket.io + moderation | Anonymous safe space |
-| PDF Reports | PDFKit | Shareable with therapists |
+| Endpoint | Description |
+|---|---|
+| `POST /api/analysis` | Submit a transcript for speech analysis |
+| `POST /api/roleplay/start` | Begin a new roleplay session |
+| `POST /api/roleplay/message` | Send a message in an active session |
+| `GET /api/progress` | Fetch historical session data |
+| `GET /api/reports/:id` | Download a session PDF |
 
----
-
-## 🎯 3 WOW Features for Judges
-
-### WOW #1: Real-Time Confidence Score
-Unlike any existing tool, FluentAI gives you a **0-100 Confidence Score** with a visual gauge, radar chart, and 6 speech metrics — all in under 3 seconds after stopping recording.
-
-### WOW #2: AI Roleplay Interview Mode
-Speak to an AI interviewer. Get real follow-up questions. See your live fluency metric while talking. Receive a full session report after. **This is practicing your most feared situation without ever needing to leave home.**
-
-### WOW #3: Anxiety Pattern Intelligence
-After 2+ weeks of situation logging, the AI identifies which specific scenarios (interview vs phone call vs class) trigger the most anxiety — and automatically prioritizes those in the therapy plan. **It learns YOUR stammer, not a generic one.**
+Full API docs in [`/docs/api.md`](./docs/api.md).
 
 ---
 
-## 💰 Monetization Strategy
+## Configuration
 
-| Tier | Price | Features |
-|------|-------|---------|
-| **Free** | $0 | 5 analyses/month, basic therapy, community |
-| **Pro** | $9.99/month | Unlimited analysis, roleplay, PDF reports, history |
-| **Therapist** | $49/month | Multi-patient dashboard, session exports, integration |
-| **Enterprise** | Custom | SLP clinics, schools, corporates |
+Copy `backend/.env.example` to `backend/.env` and fill in:
 
-**B2B2C**: Partner with speech therapy clinics as a practice tool between sessions.
-
----
-
-## 🗺️ Scalability Roadmap
-
-**Phase 1 (Hackathon)**: Core web platform, 8 features, demo-ready  
-**Phase 2 (3 months)**: Mobile app (React Native), Whisper audio transcription, therapist dashboard  
-**Phase 3 (6 months)**: Expand to Autism (social scripts), Aphasia (word finding), Selective Mutism  
-**Phase 4 (12 months)**: Clinical partnerships, insurance integrations, telehealth bridge  
-**Phase 5 (18 months)**: Multilingual support (Hindi, Arabic, Spanish), government healthcare contracts  
+```
+OPENAI_API_KEY=        # Required for AI features
+MONGODB_URI=           # Leave blank to use demo mode
+JWT_SECRET=            # Any random string
+PORT=5000
+```
 
 ---
 
-## 🛠️ Tech Stack
+## Contributing
 
-**Frontend**: React 18, Vite, Tailwind CSS, Framer Motion, Recharts, Socket.io-client  
-**Backend**: Node.js, Express, Socket.io, MongoDB/Mongoose, PDFKit, JWT  
-**AI**: OpenAI GPT-4o-mini, Web Speech API, custom heuristic engine  
-**Deployment**: Vercel (frontend) + Railway/Render (backend) + MongoDB Atlas  
+1. Fork the repo and create a branch off `main`
+2. Run `npm run dev` to start both servers
+3. Make your changes and add tests where relevant
+4. Open a pull request with a clear description of what changed and why
 
----
-
-## 🌍 Impact Statement
-
-> 70 million people stammer worldwide. Only ~5% receive any form of professional therapy.  
-> FluentAI closes this gap — not as a replacement, but as a daily companion, practice partner, and confidence builder.  
-> Every voice deserves to be heard.
+Please open an issue before starting large changes.
 
 ---
-
-*Built with 💜 for the 70+ million people who stammer worldwide*
