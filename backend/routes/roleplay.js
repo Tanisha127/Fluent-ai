@@ -32,21 +32,27 @@ router.post('/respond', auth, async (req, res) => {
 
     const systemPrompt = SCENARIO_PROMPTS[scenario] || SCENARIO_PROMPTS.job_interview
 
-    // Try OpenAI
+    // Build conversation history for AI
+    const conversationHistory = [
+      ...history.slice(-8).map(m => ({
+        role: m.role === 'ai' ? 'assistant' : 'user',
+        content: m.content
+      })),
+      { role: 'user', content: message }
+    ]
+
+    // Try OpenAI first
     if (process.env.OPENAI_API_KEY) {
       try {
         const { OpenAI } = require('openai')
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-        const messages = [
-          { role: 'system', content: systemPrompt },
-          ...history.slice(-8).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content })),
-          { role: 'user', content: message }
-        ]
-
         const response = await openai.chat.completions.create({
           model: 'gpt-4o-mini',
-          messages,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...conversationHistory
+          ],
           max_tokens: 150,
           temperature: 0.8
         })
@@ -57,9 +63,38 @@ router.post('/respond', auth, async (req, res) => {
       }
     }
 
-    // Fallback responses by scenario
+    // ✅ FIX: Try Anthropic as fallback — actually reads what the user said
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        const fetch = require('node-fetch')
+        const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 150,
+            system: systemPrompt,
+            messages: conversationHistory
+          })
+        })
+
+        const data = await anthropicRes.json()
+        if (data.content && data.content[0] && data.content[0].text) {
+          return res.json({ response: data.content[0].text })
+        }
+      } catch (anthropicErr) {
+        console.log('Anthropic roleplay failed:', anthropicErr.message)
+      }
+    }
+
+    // Last resort: static fallback (only used if both AI APIs fail)
     const fallback = getFallbackResponse(scenario, history.length)
     res.json({ response: fallback })
+
   } catch (err) {
     res.status(500).json({ message: 'Roleplay error', error: err.message })
   }

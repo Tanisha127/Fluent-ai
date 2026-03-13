@@ -8,7 +8,7 @@ const navItems = [
   { path: 'dashboard', icon: '🏠', label: 'Dashboard' },
   { path: 'analysis', icon: '🎙️', label: 'Speech Analysis' },
   { path: 'coaching', icon: '🧠', label: 'Live Coaching' },
-  { path: 'roleplay', icon: '🎭', label: 'Roleplay Mode' },
+  { path: 'roleplay', icon: '🗣️', label: 'Roleplay Mode' },
   { path: 'therapy', icon: '💊', label: 'Therapy Plan' },
   { path: 'progress', icon: '📈', label: 'My Progress' },
   { path: 'community', icon: '🤝', label: 'Community' },

@@ -84,6 +84,18 @@ export default function RoleplayPage() {
   const timerRef = useRef(null)
   const [elapsedTime, setElapsedTime] = useState(0)
 
+  const transcriptRef = useRef('')
+  const messagesRef = useRef([])
+  const liveMetricsRef = useRef(liveMetrics)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    liveMetricsRef.current = liveMetrics
+  }, [liveMetrics])
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isAiTyping])
@@ -92,43 +104,49 @@ export default function RoleplayPage() {
     setSelectedScenario(scenario)
     setSessionActive(true)
     setMessages([])
+    messagesRef.current = []
     setSessionStats({ exchanges: 0, avgFluency: 0, duration: 0 })
     setElapsedTime(0)
     setSessionEnded(false)
+    transcriptRef.current = ''
 
     timerRef.current = setInterval(() => setElapsedTime(t => t + 1), 1000)
 
-    // Add AI first message
     setTimeout(() => {
-      setMessages([{
+      const firstMsg = [{
         role: 'ai',
         content: scenario.firstQuestion,
         timestamp: new Date()
-      }])
+      }]
+      setMessages(firstMsg)
+      messagesRef.current = firstMsg
     }, 500)
   }
 
   const startRecording = async () => {
     try {
+      transcriptRef.current = ''
+      setUserTranscript('')
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaRecorderRef.current = new MediaRecorder(stream)
       const chunks = []
       mediaRecorderRef.current.ondataavailable = e => chunks.push(e.data)
+
       mediaRecorderRef.current.onstop = async () => {
-        await sendUserResponse(userTranscript, chunks)
+        const finalTranscript = transcriptRef.current.trim()
+        await sendUserResponse(finalTranscript, chunks)
       }
+
       mediaRecorderRef.current.start()
       setIsRecording(true)
-      setUserTranscript('')
 
-      // Speech recognition
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition
         recognitionRef.current = new SR()
         recognitionRef.current.continuous = true
         recognitionRef.current.interimResults = true
 
-        // Simulate live metrics
         const metricsInterval = setInterval(() => {
           setLiveMetrics({
             fluency: 60 + Math.floor(Math.random() * 30),
@@ -138,13 +156,16 @@ export default function RoleplayPage() {
         }, 1000)
 
         recognitionRef.current.onresult = (event) => {
-          let final = '', interim = ''
+          let final = ''
           for (let i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) final += event.results[i][0].transcript
-            else interim += event.results[i][0].transcript
           }
-          if (final) setUserTranscript(p => p + ' ' + final)
+          if (final) {
+            transcriptRef.current = (transcriptRef.current + ' ' + final).trim()
+            setUserTranscript(transcriptRef.current)
+          }
         }
+
         recognitionRef.current.start()
         recognitionRef.current._metricsInterval = metricsInterval
       }
@@ -159,35 +180,50 @@ export default function RoleplayPage() {
       clearInterval(recognitionRef.current._metricsInterval)
       recognitionRef.current.stop()
     }
-    mediaRecorderRef.current?.stop()
-    mediaRecorderRef.current?.stream?.getTracks().forEach(t => t.stop())
+    setTimeout(() => {
+      mediaRecorderRef.current?.stop()
+      mediaRecorderRef.current?.stream?.getTracks().forEach(t => t.stop())
+    }, 300)
   }
 
   const sendUserResponse = async (transcript, audioChunks) => {
-    if (!transcript.trim()) {
+    if (!transcript || !transcript.trim()) {
       toast.error("Didn't catch that. Please try again.")
       return
     }
 
-    const userMsg = { role: 'user', content: transcript.trim(), timestamp: new Date(), fluency: liveMetrics.fluency }
+    const currentMetrics = liveMetricsRef.current
+    const userMsg = {
+      role: 'user',
+      content: transcript.trim(),
+      timestamp: new Date(),
+      fluency: currentMetrics.fluency
+    }
+
+    const currentMessages = messagesRef.current
     setMessages(prev => [...prev, userMsg])
+    messagesRef.current = [...currentMessages, userMsg]
     setIsAiTyping(true)
 
     try {
       const res = await axios.post('/api/roleplay/respond', {
         scenario: selectedScenario.id,
-        message: transcript,
-        history: messages.map(m => ({ role: m.role, content: m.content }))
+        message: transcript.trim(),
+        history: currentMessages.map(m => ({ role: m.role, content: m.content }))
       })
-      await new Promise(r => setTimeout(r, 1200))
-      setMessages(prev => [...prev, {
+
+      await new Promise(r => setTimeout(r, 800))
+
+      const aiMsg = {
         role: 'ai',
         content: res.data.response,
         timestamp: new Date()
-      }])
+      }
+      setMessages(prev => [...prev, aiMsg])
+      messagesRef.current = [...messagesRef.current, aiMsg]
+
     } catch {
-      // Demo AI responses
-      await new Promise(r => setTimeout(r, 1500))
+      await new Promise(r => setTimeout(r, 1000))
       const demoResponses = [
         "That's a great point. Could you elaborate on how you handled challenges in that situation?",
         "Interesting. What specific skills do you believe make you stand out for this role?",
@@ -195,16 +231,18 @@ export default function RoleplayPage() {
         "Excellent. Can you walk me through a time you faced a difficult situation and how you resolved it?",
         "Thank you for sharing that. Do you have any questions for us?"
       ]
-      setMessages(prev => [...prev, {
+      const aiMsg = {
         role: 'ai',
         content: demoResponses[Math.floor(Math.random() * demoResponses.length)],
         timestamp: new Date()
-      }])
+      }
+      setMessages(prev => [...prev, aiMsg])
+      messagesRef.current = [...messagesRef.current, aiMsg]
     } finally {
       setIsAiTyping(false)
       setSessionStats(prev => ({
         exchanges: prev.exchanges + 1,
-        avgFluency: Math.round((prev.avgFluency * prev.exchanges + liveMetrics.fluency) / (prev.exchanges + 1)),
+        avgFluency: Math.round((prev.avgFluency * prev.exchanges + currentMetrics.fluency) / (prev.exchanges + 1)),
         duration: elapsedTime
       }))
     }
@@ -283,7 +321,6 @@ export default function RoleplayPage() {
   if (sessionActive && selectedScenario) {
     return (
       <div className="p-6 max-w-4xl mx-auto h-screen flex flex-col">
-        {/* Session header */}
         <div className="glass-card p-4 mb-4 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-2xl">{selectedScenario.icon}</span>
@@ -304,7 +341,6 @@ export default function RoleplayPage() {
           </div>
         </div>
 
-        {/* Chat area */}
         <div className="glass-card flex-1 overflow-y-auto p-5 mb-4 space-y-4">
           {messages.map((msg, i) => (
             <motion.div
@@ -319,9 +355,7 @@ export default function RoleplayPage() {
                 {msg.role === 'ai' ? '🤖' : '👤'}
               </div>
               <div className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl text-sm ${
-                msg.role === 'ai'
-                  ? 'rounded-tl-sm'
-                  : 'rounded-tr-sm'
+                msg.role === 'ai' ? 'rounded-tl-sm' : 'rounded-tr-sm'
               }`} style={{
                 background: msg.role === 'ai' ? 'rgba(139,92,246,0.08)' : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
                 color: msg.role === 'ai' ? 'var(--text)' : '#fff'
@@ -345,7 +379,6 @@ export default function RoleplayPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Live transcript preview */}
         {isRecording && userTranscript && (
           <div className="glass-card p-3 mb-3 text-sm flex-shrink-0"
             style={{ color: 'var(--text-muted)', background: 'rgba(239,68,68,0.04)' }}>
@@ -353,7 +386,6 @@ export default function RoleplayPage() {
           </div>
         )}
 
-        {/* Recording controls */}
         <div className="glass-card p-4 flex-shrink-0">
           <div className="flex items-center gap-4">
             <div className="flex-1">
@@ -403,7 +435,7 @@ export default function RoleplayPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <h1 className="font-display text-3xl font-bold">AI Roleplay Simulator 🎭</h1>
+        <h1 className="font-display text-3xl font-bold">AI Roleplay Simulator</h1>
         <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
           Practice real-life conversations with your AI conversation partner. No judgment, just growth.
         </p>

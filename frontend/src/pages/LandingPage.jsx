@@ -52,7 +52,7 @@ const features = [
     desc: 'Adaptive daily exercises — breathing drills, easy onset practice, slow speech training — tailored just for you.'
   },
   {
-    icon: '🎭',
+    icon: '🗣️',
     title: 'Roleplay Simulator',
     desc: 'Practice job interviews, presentations, and phone calls with an AI conversation partner that never judges.'
   },

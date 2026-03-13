@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 const BADGES = [
   { icon: '🌱', title: 'First Steps', desc: 'Completed first analysis', earned: true },
   { icon: '🔥', title: 'On Fire', desc: '7-day streak', earned: true },
-  { icon: '🎭', title: 'Actor', desc: 'Completed 5 roleplays', earned: true },
+  { icon: '🗣️', title: 'Actor', desc: 'Completed 5 roleplays', earned: true },
   { icon: '💊', title: 'Dedicated', desc: 'Finished 10 exercises', earned: true },
   { icon: '🏆', title: 'Champion', desc: 'Score 80+ confidence', earned: false },
   { icon: '🌟', title: 'Star', desc: '30-day streak', earned: false },
@@ -162,7 +162,7 @@ export default function ProfilePage() {
             { label: 'Total Sessions', value: '47', icon: '🎙️' },
             { label: 'Total Practice Time', value: '8.4 hrs', icon: '⏱️' },
             { label: 'Exercises Complete', value: '23', icon: '💊' },
-            { label: 'Roleplay Sessions', value: '12', icon: '🎭' }
+            { label: 'Roleplay Sessions', value: '12', icon: '🗣️' }
           ].map(s => (
             <div key={s.label} className="text-center p-4 rounded-xl"
               style={{ background: 'rgba(139,92,246,0.04)' }}>
