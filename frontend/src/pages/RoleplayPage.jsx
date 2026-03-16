@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-
+import { useAuth } from '../context/AuthContext'
 
 const SCENARIOS = [
   {
@@ -69,6 +69,8 @@ const TypingDots = () => (
 )
 
 export default function RoleplayPage() {
+  const { user } = useAuth()
+
   const [selectedScenario, setSelectedScenario] = useState(null)
   const [sessionActive, setSessionActive] = useState(false)
   const [messages, setMessages] = useState([])
@@ -79,10 +81,13 @@ export default function RoleplayPage() {
   const [sessionStats, setSessionStats] = useState({ exchanges: 0, avgFluency: 0, duration: 0 })
   const [sessionEnded, setSessionEnded] = useState(false)
   const [sessionReport, setSessionReport] = useState(null)
+  const [coachingTip, setCoachingTip] = useState(null)
+
   const mediaRecorderRef = useRef(null)
   const recognitionRef = useRef(null)
   const messagesEndRef = useRef(null)
   const timerRef = useRef(null)
+  const recordingStartRef = useRef(null)
   const [elapsedTime, setElapsedTime] = useState(0)
 
   const transcriptRef = useRef('')
@@ -90,21 +95,10 @@ export default function RoleplayPage() {
   const liveMetricsRef = useRef(liveMetrics)
   const elapsedTimeRef = useRef(0)
 
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
-
-  useEffect(() => {
-    liveMetricsRef.current = liveMetrics
-  }, [liveMetrics])
-
-  useEffect(() => {
-    elapsedTimeRef.current = elapsedTime
-  }, [elapsedTime])
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isAiTyping])
+  useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { liveMetricsRef.current = liveMetrics }, [liveMetrics])
+  useEffect(() => { elapsedTimeRef.current = elapsedTime }, [elapsedTime])
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, isAiTyping])
 
   const startSession = async (scenario) => {
     setSelectedScenario(scenario)
@@ -115,15 +109,12 @@ export default function RoleplayPage() {
     setElapsedTime(0)
     setSessionEnded(false)
     transcriptRef.current = ''
+    setCoachingTip(null)
 
     timerRef.current = setInterval(() => setElapsedTime(t => t + 1), 1000)
 
     setTimeout(() => {
-      const firstMsg = [{
-        role: 'ai',
-        content: scenario.firstQuestion,
-        timestamp: new Date()
-      }]
+      const firstMsg = [{ role: 'ai', content: scenario.firstQuestion, timestamp: new Date() }]
       setMessages(firstMsg)
       messagesRef.current = firstMsg
     }, 500)
@@ -133,17 +124,16 @@ export default function RoleplayPage() {
     try {
       transcriptRef.current = ''
       setUserTranscript('')
+      recordingStartRef.current = Date.now()
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaRecorderRef.current = new MediaRecorder(stream)
       const chunks = []
       mediaRecorderRef.current.ondataavailable = e => chunks.push(e.data)
-
       mediaRecorderRef.current.onstop = async () => {
         const finalTranscript = transcriptRef.current.trim()
         await sendUserResponse(finalTranscript, chunks)
       }
-
       mediaRecorderRef.current.start()
       setIsRecording(true)
 
@@ -153,18 +143,24 @@ export default function RoleplayPage() {
         recognitionRef.current.continuous = true
         recognitionRef.current.interimResults = true
 
-        const metricsInterval = setInterval(() => {
-          setLiveMetrics({
-            fluency: 60 + Math.floor(Math.random() * 30),
-            stress: Math.floor(Math.random() * 40),
-            pace: ['Slow', 'Normal', 'Fast'][Math.floor(Math.random() * 3)]
-          })
-        }, 1000)
-
         recognitionRef.current.onresult = (event) => {
           let final = ''
           for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) final += event.results[i][0].transcript
+            if (event.results[i].isFinal) {
+              final += event.results[i][0].transcript
+
+              // Real fluency from speech recognition confidence
+              const confidence = event.results[i][0].confidence
+              const wordCount = transcriptRef.current.split(' ').length
+              const timeSpoken = (Date.now() - recordingStartRef.current) / 1000
+              const wpm = timeSpoken > 0 ? Math.round((wordCount / timeSpoken) * 60) : 0
+
+              setLiveMetrics({
+                fluency: Math.round((confidence || 0.75) * 100),
+                stress: Math.round((1 - (confidence || 0.75)) * 100),
+                pace: wpm < 100 ? 'Slow' : wpm > 160 ? 'Fast' : 'Normal'
+              })
+            }
           }
           if (final) {
             transcriptRef.current = (transcriptRef.current + ' ' + final).trim()
@@ -173,7 +169,6 @@ export default function RoleplayPage() {
         }
 
         recognitionRef.current.start()
-        recognitionRef.current._metricsInterval = metricsInterval
       }
     } catch (err) {
       toast.error('Microphone access required for roleplay mode')
@@ -182,10 +177,7 @@ export default function RoleplayPage() {
 
   const stopRecording = () => {
     setIsRecording(false)
-    if (recognitionRef.current) {
-      clearInterval(recognitionRef.current._metricsInterval)
-      recognitionRef.current.stop()
-    }
+    if (recognitionRef.current) recognitionRef.current.stop()
     setTimeout(() => {
       mediaRecorderRef.current?.stop()
       mediaRecorderRef.current?.stream?.getTracks().forEach(t => t.stop())
@@ -206,20 +198,19 @@ export default function RoleplayPage() {
       fluency: currentMetrics.fluency
     }
 
-    // Capture messages BEFORE adding user message (this is the history to send)
     const historyBeforeUser = messagesRef.current
-
-    // Now update state with user message
     setMessages(prev => [...prev, userMsg])
     messagesRef.current = [...historyBeforeUser, userMsg]
     setIsAiTyping(true)
+    setCoachingTip(null)
 
     try {
       const res = await axios.post('/api/roleplay/respond', {
         scenario: selectedScenario.id,
         message: transcript.trim(),
-        // Send history WITHOUT the new user message — backend appends it
-        history: historyBeforeUser.map(m => ({ role: m.role, content: m.content }))
+        history: historyBeforeUser.map(m => ({ role: m.role, content: m.content })),
+        userGoals: user?.primary_goals,
+        stammering_level: user?.stammering_level
       })
 
       await new Promise(r => setTimeout(r, 600))
@@ -229,28 +220,34 @@ export default function RoleplayPage() {
         content: res.data.response,
         timestamp: new Date()
       }
+
       setMessages(prev => [...prev, aiMsg])
       messagesRef.current = [...messagesRef.current, aiMsg]
 
+      // Show coaching tip if returned
+      if (res.data.coachingTip) {
+        setCoachingTip(res.data.coachingTip)
+        setTimeout(() => setCoachingTip(null), 5000)
+      }
+
     } catch (err) {
       console.error('API call failed:', err)
-
-      // Smart client-side fallback that references what user said
       await new Promise(r => setTimeout(r, 800))
+
       const snippet = transcript.trim().slice(0, 50)
       const smartFallbacks = {
         job_interview: [
           `You mentioned "${snippet}" — can you give me a specific example of that?`,
           `That's a strong point. How did that experience prepare you for this role specifically?`,
           `Interesting. What was the biggest challenge in what you just described, and how did you overcome it?`,
-          `Good. Can you quantify the impact of what you just talked about — numbers or outcomes?`,
+          `Good. Can you quantify the impact — numbers or outcomes from what you just talked about?`,
           `Thank you. Do you have any questions for us about the role or the team?`
         ],
         university_viva: [
           `You mentioned "${snippet}" — how does that relate to your core thesis argument?`,
           `Can you expand on the methodology behind what you just described?`,
           `What are the limitations of the approach you just outlined?`,
-          `How does this finding contribute to the existing body of knowledge in your field?`
+          `How does this finding contribute to the existing body of knowledge?`
         ],
         presentation: [
           `You mentioned "${snippet}" — what data supports that claim?`,
@@ -258,9 +255,9 @@ export default function RoleplayPage() {
           `What's the risk if this particular aspect doesn't go as planned?`
         ],
         phone_call: [
-          `I understand. Can you confirm your account details so I can look into "${snippet}" for you?`,
+          `I understand. Can you confirm your account details so I can look into that for you?`,
           `Got it. Let me process that — is there anything else I can help with today?`,
-          `Of course. I'll make a note of that. Is the contact number we have on file still correct?`
+          `Of course. I'll make a note of that. Is the contact number we have still correct?`
         ],
         social: [
           `Oh nice! You mentioned "${snippet}" — how did you get into that?`,
@@ -272,11 +269,7 @@ export default function RoleplayPage() {
       const pool = smartFallbacks[selectedScenario.id] || smartFallbacks.job_interview
       const fallbackContent = pool[Math.min(historyBeforeUser.length, pool.length - 1)]
 
-      const aiMsg = {
-        role: 'ai',
-        content: fallbackContent,
-        timestamp: new Date()
-      }
+      const aiMsg = { role: 'ai', content: fallbackContent, timestamp: new Date() }
       setMessages(prev => [...prev, aiMsg])
       messagesRef.current = [...messagesRef.current, aiMsg]
     } finally {
@@ -299,7 +292,7 @@ export default function RoleplayPage() {
       avgFluency: sessionStats.avgFluency || 72,
       duration: elapsedTime,
       feedback: [
-        'You maintained good eye contact and a steady pace throughout most of the interview.',
+        'You maintained good eye contact and a steady pace throughout most of the session.',
         'Consider using pausing techniques before answering complex questions.',
         'Your answers showed strong structure — keep using the STAR method.',
         'Great progress on managing blocks compared to your baseline!'
@@ -315,7 +308,7 @@ export default function RoleplayPage() {
       <div className="p-6 max-w-3xl mx-auto">
         <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
           <div className="glass-card p-8 text-center mb-6">
-            <div className="text-6xl mb-4 achievement-pop">🏆</div>
+            <div className="text-6xl mb-4">🏆</div>
             <h1 className="font-display text-3xl font-bold mb-2">Session Complete!</h1>
             <p className="mb-2" style={{ color: 'var(--text-muted)' }}>You finished your {sessionReport.scenario}</p>
             <div className="badge badge-purple inline-flex mt-2">+{sessionReport.xpEarned} Confidence XP</div>
@@ -367,7 +360,10 @@ export default function RoleplayPage() {
             <span className="text-2xl">{selectedScenario.icon}</span>
             <div>
               <div className="font-semibold">{selectedScenario.title}</div>
-              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Session in progress • {formatTime(elapsedTime)}</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Session in progress • {formatTime(elapsedTime)}
+                {user?.stammering_level && ` • ${user.stammering_level} level`}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -402,7 +398,7 @@ export default function RoleplayPage() {
                 color: msg.role === 'ai' ? 'var(--text)' : '#fff'
               }}>
                 {msg.content}
-                {msg.fluency && (
+                {msg.fluency > 0 && (
                   <div className="mt-2 text-xs opacity-70">Fluency: {msg.fluency}%</div>
                 )}
               </div>
@@ -419,6 +415,22 @@ export default function RoleplayPage() {
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Coaching tip */}
+        <AnimatePresence>
+          {coachingTip && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="glass-card p-3 mb-3 text-sm flex-shrink-0 flex items-center gap-2"
+              style={{ background: 'rgba(134,239,172,0.08)', borderLeft: '3px solid #22c55e' }}
+            >
+              <span>🎯</span>
+              <span className="text-green-600 font-medium">{coachingTip}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {isRecording && userTranscript && (
           <div className="glass-card p-3 mb-3 text-sm flex-shrink-0"
@@ -480,6 +492,13 @@ export default function RoleplayPage() {
         <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
           Practice real-life conversations with your AI conversation partner. No judgment, just growth.
         </p>
+        {user?.primary_goals?.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {user.primary_goals.map(goal => (
+              <span key={goal} className="badge badge-purple text-xs">{goal}</span>
+            ))}
+          </div>
+        )}
       </motion.div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -506,7 +525,7 @@ export default function RoleplayPage() {
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>{scenario.desc}</p>
             <div className="flex items-center justify-between">
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                AI will ask realistic questions
+                AI will ask relevant questions
               </div>
               <button className="text-sm font-medium group-hover:translate-x-1 transition-transform"
                 style={{ color: scenario.color }}>

@@ -3,42 +3,104 @@ const router = express.Router()
 const { auth } = require('../middleware/auth')
 
 const SCENARIO_PROMPTS = {
-  job_interview: `You are a professional, friendly HR interviewer conducting a job interview.
-You MUST read the candidate's last answer carefully and ask a relevant follow-up question based on what they specifically said.
-Ask ONE question at a time. Keep your response under 3 sentences.
-Be encouraging but professional. Never break character. Never mention speech or stammering.
-If they mention a specific skill, project, or experience — dig into THAT. Do not ask generic questions.`,
+  job_interview: `You are Sarah, a senior HR manager at a top tech company conducting a real job interview.
+  You MUST read the candidate's last answer carefully and ask a relevant follow-up question based on what they specifically said.
+  Ask ONE question at a time. Keep your response under 3 sentences.
+  Be encouraging but professional. Never break character. Never mention speech or stammering.
+  If they mention a specific skill, project, or experience — dig into THAT. Do not ask generic questions.
+  If they mention a project → ask about challenges faced.
+  If they mention a skill → ask for a specific example with outcome.
+  If they give a vague answer → push for specifics: numbers, outcomes, timelines.
+  React like a real interviewer: "Interesting...", "That's helpful context...", "I'd love to understand more about..."
+  After 6 exchanges, wrap up naturally: "We're almost done — do you have questions for us?"
+  NEVER ask the same question twice.`,
 
-  university_viva: `You are an academic examiner for a PhD/Masters viva voce examination.
-You MUST respond directly to what the student just said and ask ONE probing follow-up question about it.
-Be formal but fair. React to their specific answer — if they mention a methodology, challenge it. If they mention findings, ask for implications.
-Keep your response under 3 sentences.`,
+  university_viva: `You are Professor James, a strict but fair PhD examiner conducting a viva voce.
+  You MUST respond directly to what the student just said and ask ONE probing follow-up question about it.
+  Be formal but fair. React to their specific answer.
+  If they mention a methodology → challenge it: "Why this over alternatives?"
+  If they mention findings → ask for implications: "How does this contribute beyond existing literature?"
+  If they make a claim → ask for evidence: "What specifically supports this?"
+  Use academic language: "Could you elaborate on...", "How would you respond to critics who argue..."
+  Keep your response under 3 sentences.
+  NEVER ask the same question twice.`,
 
-  presentation: `You are an engaged team member listening to a presentation.
-React to what was just said, then ask ONE specific clarifying question about that point.
-Keep it professional and concise — under 3 sentences.`,
+  presentation: `You are Alex, a senior product manager listening to a team presentation.
+  React naturally to what was JUST presented — reference their specific words.
+  Ask ONE sharp business-focused question about what they said.
+  Challenge assumptions: "You mentioned X — what's the data behind that?"
+  Ask about risks: "What happens if Y doesn't work as planned?"
+  Ask about resources: "What do you need from leadership to make this happen?"
+  Occasionally be encouraging: "This is compelling — tell me more about..."
+  Keep responses under 2 sentences.
+  NEVER ask the same question twice.`,
 
-  phone_call: `You are a customer service representative taking a call.
-Respond naturally and helpfully to exactly what the caller just said.
-Ask only what you need next to help them. Keep responses concise — under 2 sentences.`,
+  phone_call: `You are Maya, a professional customer service representative taking a call.
+  Respond naturally and helpfully to EXACTLY what the caller just said.
+  If they have a problem → acknowledge it first, then ask ONE clarifying question.
+  If they give information → confirm it back and ask what's needed next.
+  Sound professional but warm: "Of course, I can help with that..."
+  Keep responses very short — 1-2 sentences max.
+  Never ask for information you already have.`,
 
-  social: `You are a friendly person at a networking event meeting someone new.
-Respond warmly and naturally to what they just said, then ask ONE follow-up question about something specific they mentioned.
-Keep it light and conversational — under 2 sentences.`
+  social: `You are Jamie, a friendly and curious person at a professional networking event.
+  Respond warmly and naturally to what they JUST said.
+  Pick ONE specific thing they mentioned and ask about it with genuine curiosity.
+  Share brief relatable reactions: "Oh that's interesting!", "Ha, I know what you mean!"
+  Keep the energy light and genuine — this is casual conversation.
+  Keep responses to 1-2 sentences.
+  NEVER ask the same question twice.`
 }
 
 // POST /api/roleplay/respond
 router.post('/respond', auth, async (req, res) => {
   try {
-    const { scenario, message, history } = req.body
+    const { scenario, message, history, userGoals, stammering_level } = req.body
 
     if (!message || !message.trim()) {
       return res.status(400).json({ message: 'No message provided' })
     }
 
-    const systemPrompt = SCENARIO_PROMPTS[scenario] || SCENARIO_PROMPTS.job_interview
+    const basePrompt = SCENARIO_PROMPTS[scenario] || SCENARIO_PROMPTS.job_interview
 
-    // Build full conversation history INCLUDING the new user message
+    // Topics already covered — prevent repetition
+    const topicsCovered = history
+      .filter(m => m.role === 'user')
+      .map(m => m.content.slice(0, 60))
+      .join(' | ')
+
+    // Personalize based on user stammering level
+    const personalization = stammering_level
+      ? `\nUser's stammering level: ${stammering_level}. ${
+          stammering_level === 'Severe'
+            ? 'Be extra patient, warm and encouraging. Give them time. Be very supportive.'
+            : stammering_level === 'Mild'
+            ? 'Be professional and slightly more challenging. Push for detail.'
+            : 'Be balanced — supportive but push for specific answers.'
+        }`
+      : ''
+
+    // Add user goals context
+    const goalsContext = userGoals && userGoals.length > 0
+      ? `\nUser is practicing for: ${userGoals.join(', ')}. Keep this in mind when forming questions.`
+      : ''
+
+    // Build final system prompt
+    const systemPrompt = basePrompt
+      + personalization
+      + goalsContext
+      + (topicsCovered
+        ? `\nTopics already discussed: ${topicsCovered}. DO NOT repeat these — move the conversation forward naturally.`
+        : '')
+
+    // Force model to acknowledge what user specifically said
+    const forcedAcknowledgement = `The user just said: "${message}"
+React to THIS specific answer. Reference their exact words or ideas.
+Ask ONE relevant follow-up question based ONLY on what they just said.
+Do NOT ask generic questions. Do NOT ignore what they said.
+Do NOT repeat any question already asked in this conversation.`
+
+    // Build conversation history
     const conversationHistory = [
       ...history.slice(-10).map(m => ({
         role: m.role === 'ai' ? 'assistant' : 'user',
@@ -47,7 +109,6 @@ router.post('/respond', auth, async (req, res) => {
       { role: 'user', content: message }
     ]
 
-    
     // Try OpenAI first
     if (process.env.OPENAI_API_KEY) {
       try {
@@ -55,13 +116,14 @@ router.post('/respond', auth, async (req, res) => {
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
         const response = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: 'gpt-4o',
           messages: [
             { role: 'system', content: systemPrompt },
-            ...conversationHistory
+            ...conversationHistory,
+            { role: 'system', content: forcedAcknowledgement }
           ],
           max_tokens: 150,
-          temperature: 0.8
+          temperature: 0.7
         })
 
         return res.json({ response: response.choices[0].message.content })
@@ -84,7 +146,7 @@ router.post('/respond', auth, async (req, res) => {
           body: JSON.stringify({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 150,
-            system: systemPrompt,
+            system: systemPrompt + '\n' + forcedAcknowledgement,
             messages: conversationHistory
           })
         })
@@ -98,7 +160,7 @@ router.post('/respond', auth, async (req, res) => {
       }
     }
 
-    // Last resort fallback — still tries to be relevant
+    // Last resort fallback
     const fallback = getFallbackResponse(scenario, history.length, message)
     res.json({ response: fallback })
 

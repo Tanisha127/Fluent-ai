@@ -1,41 +1,51 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   RadarChart, PolarGrid, PolarAngleAxis, Radar
 } from 'recharts'
+import axios from 'axios'
+import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
-
-const weeklyData = [
-  { day: 'Mon', fluency: 68, sessions: 2, confidence: 65 },
-  { day: 'Tue', fluency: 72, sessions: 3, confidence: 70 },
-  { day: 'Wed', fluency: 75, sessions: 2, confidence: 73 },
-  { day: 'Thu', fluency: 70, sessions: 4, confidence: 68 },
-  { day: 'Fri', fluency: 80, sessions: 3, confidence: 78 },
-  { day: 'Sat', fluency: 78, sessions: 2, confidence: 75 },
-  { day: 'Sun', fluency: 83, sessions: 1, confidence: 82 }
-]
-
-const radarData = [
-  { metric: 'Fluency', current: 83, previous: 68 },
-  { metric: 'Confidence', current: 82, previous: 65 },
-  { metric: 'Pace Control', current: 75, previous: 60 },
-  { metric: 'Breathing', current: 88, previous: 72 },
-  { metric: 'Onset Ease', current: 70, previous: 50 },
-  { metric: 'Consistency', current: 85, previous: 70 }
-]
+const getWeekRange = () => {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+  const mon = new Date(now.setDate(diff))
+  const sun = new Date(mon)
+  sun.setDate(mon.getDate() + 6)
+  return `${mon.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${sun.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+}
 
 export default function ReportsPage() {
+  const { user } = useAuth()
   const [generating, setGenerating] = useState(false)
-  const [selectedWeek, setSelectedWeek] = useState('current')
+  const [current, setCurrent] = useState(null)
+  const [pastReports, setPastReports] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadReportData()
+  }, [])
+
+  const loadReportData = async () => {
+    try {
+      const [currentRes, listRes] = await Promise.all([
+        axios.get('/api/reports/current'),
+        axios.get('/api/reports/list')
+      ])
+      setCurrent(currentRes.data.current)
+      setPastReports(listRes.data.reports || [])
+    } catch (err) {
+      console.error('Report load error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const generatePDF = async () => {
     setGenerating(true)
-    // Simulate PDF generation
-    await new Promise(r => setTimeout(r, 2000))
-
-    // In production, this would call the backend PDF generation endpoint
     try {
       const response = await fetch('/api/reports/generate', {
         method: 'POST',
@@ -43,7 +53,7 @@ export default function ReportsPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ week: selectedWeek })
+        body: JSON.stringify({})
       })
 
       if (response.ok) {
@@ -51,73 +61,28 @@ export default function ReportsPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = 'fluent-ai-report.pdf'
+        a.download = `fluent-ai-report-${new Date().toISOString().slice(0, 10)}.pdf`
         a.click()
         window.URL.revokeObjectURL(url)
         toast.success('Report downloaded! 📄')
       } else {
-        throw new Error('Backend unavailable')
+        throw new Error('PDF failed')
       }
     } catch {
-      // Demo mode: create a simple text file
-      const reportContent = generateReportText()
-      const blob = new Blob([reportContent], { type: 'text/plain' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'fluent-ai-weekly-report.txt'
-      a.click()
-      window.URL.revokeObjectURL(url)
-      toast.success('Demo report downloaded! 📄')
+      toast.error('PDF generation failed. Try again.')
+    } finally {
+      setGenerating(false)
     }
-    setGenerating(false)
   }
 
-  const generateReportText = () => {
-    return `
-╔══════════════════════════════════════════════════╗
-║           FLUENT AI — WEEKLY PROGRESS REPORT       ║
-║                   Week of Feb 16–22, 2026           ║
-╚══════════════════════════════════════════════════╝
+  const noData = !current || current.total_sessions === 0
 
-📊 EXECUTIVE SUMMARY
-━━━━━━━━━━━━━━━━━━━━
-Overall Confidence Score: 82/100  (+17 from baseline)
-Weekly Fluency Rate:      78%     (+10% from last week)
-Anxiety Reduction:        -37%    (vs. your first week)
-Practice Consistency:     6/7 days ██████░
-
-🎯 KEY ACHIEVEMENTS THIS WEEK
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ Completed 17 speech analysis sessions
-✅ Finished 5/6 daily therapy exercises
-✅ Completed 3 roleplay scenarios (Interview, Phone Call, Presentation)
-✅ Maintained 14-day practice streak
-
-📈 FLUENCY BREAKDOWN
-━━━━━━━━━━━━━━━━━━━
-Monday:    68%  ██████▌
-Tuesday:   72%  ███████▏
-Wednesday: 75%  ███████▌
-Thursday:  70%  ███████
-Friday:    80%  ████████
-Saturday:  78%  ███████▊
-Sunday:    83%  ████████▎
-
-🧠 AI RECOMMENDATIONS FOR NEXT WEEK
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Focus on phone call scenarios — your anxiety score is highest here
-2. Continue easy onset practice — blocks reduced by 40% this week
-3. Try the "Bouncing Technique" exercise you haven't completed yet
-4. Join the Interview Prep community room for peer practice
-
-💜 MOTIVATIONAL NOTE
-━━━━━━━━━━━━━━━━━━━
-"Your voice improved 17 points in one week. That's not small — that's extraordinary effort turning into real change. Keep going."
-                                        — Your FluentAI Coach
-
-Generated by FluentAI | fluent-ai.vercel.app
-    `.trim()
+  if (loading) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
   }
 
   return (
@@ -125,147 +90,281 @@ Generated by FluentAI | fluent-ai.vercel.app
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-display text-3xl font-bold">Weekly Reports 📄</h1>
+            <h1 className="font-display text-3xl font-bold">Progress Reports 📄</h1>
             <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-              Download your comprehensive AI-generated progress reports to share with therapists or track offline.
+              {noData
+                ? 'Complete sessions to generate your first report.'
+                : 'Your real data — download and share with your therapist.'}
             </p>
           </div>
           <motion.button
             onClick={generatePDF}
-            disabled={generating}
+            disabled={generating || noData}
             className="btn-primary px-6 py-3 flex items-center gap-2"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={!noData ? { scale: 1.05 } : {}}
+            whileTap={!noData ? { scale: 0.95 } : {}}
+            style={noData ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
           >
             {generating ? (
               <>
                 <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 Generating...
               </>
-            ) : '⬇️ Download Report'}
+            ) : '⬇️ Download PDF'}
           </motion.button>
         </div>
       </motion.div>
 
-      {/* Report preview card */}
-      <div className="glass-card p-8 mb-6"
-        style={{ border: '2px solid rgba(139, 92, 246, 0.2)' }}>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="badge badge-purple mb-2 inline-flex">Week of Feb 16–22, 2026</div>
-            <h2 className="font-display text-2xl font-bold">Your Progress Report</h2>
-          </div>
-          <div className="text-right">
-            <div className="font-display text-4xl font-bold gradient-text">82</div>
-            <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Confidence Score</div>
-            <div className="badge badge-green mt-1 inline-flex">+17 from baseline</div>
-          </div>
-        </div>
-
-        {/* Key metrics row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[
-            { label: 'Fluency Rate', value: '78%', change: '+10%', up: true },
-            { label: 'Anxiety Reduction', value: '-37%', change: 'vs baseline', up: true },
-            { label: 'Sessions', value: '17', change: '6/7 days', up: true },
-            { label: 'Exercises Done', value: '5/6', change: '83% complete', up: null }
-          ].map((m, i) => (
-            <div key={m.label} className="p-4 rounded-xl text-center"
-              style={{ background: 'rgba(139,92,246,0.05)' }}>
-              <div className="font-display text-xl font-bold">{m.value}</div>
-              <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{m.label}</div>
-              <div className={`text-xs mt-1 font-medium ${m.up ? 'text-green-500' : ''}`}>{m.change}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Charts */}
-        <div className="grid md:grid-cols-2 gap-6 mb-8">
-          <div>
-            <h3 className="font-semibold mb-3 text-sm">Daily Fluency This Week</h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(139,92,246,0.1)" />
-                <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                <YAxis domain={[50, 100]} tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="fluency" stroke="#8b5cf6" strokeWidth={2.5}
-                  dot={{ fill: '#8b5cf6', r: 4 }} name="Fluency %" />
-                <Line type="monotone" dataKey="confidence" stroke="#22c55e" strokeWidth={2}
-                  dot={{ fill: '#22c55e', r: 3 }} strokeDasharray="4 4" name="Confidence" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <div>
-            <h3 className="font-semibold mb-3 text-sm">Speech Profile (vs Last Week)</h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="rgba(139,92,246,0.2)" />
-                <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10 }} />
-                <Radar dataKey="current" name="This Week" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.25} strokeWidth={2} />
-                <Radar dataKey="previous" name="Last Week" stroke="#d1d5db" fill="#d1d5db" fillOpacity={0.1} strokeWidth={1.5} strokeDasharray="4 4" />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* AI Recommendations */}
-        <div>
-          <h3 className="font-semibold mb-3">🧠 AI Recommendations for Next Week</h3>
-          <div className="space-y-2">
-            {[
-              { priority: 'High', text: 'Phone call scenarios trigger your highest anxiety — schedule 3 roleplay phone sessions this week' },
-              { priority: 'High', text: 'Easy onset practice reduced your blocks by 40% — continue daily for maximum impact' },
-              { priority: 'Medium', text: 'Try the Bouncing Technique exercise — it\'s the only one you haven\'t completed' },
-              { priority: 'Low', text: 'Join the Interview Prep community room for peer accountability and practice' }
-            ].map((r, i) => (
-              <div key={i} className="flex gap-3 p-3 rounded-xl text-sm"
-                style={{ background: 'rgba(134,239,172,0.06)' }}>
-                <span className={`badge text-xs flex-shrink-0 ${
-                  r.priority === 'High' ? 'badge-purple' : r.priority === 'Medium' ? 'badge-blue' : 'badge-green'
-                }`}>{r.priority}</span>
-                <span>{r.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Motivational quote */}
-        <div className="mt-6 p-5 rounded-xl text-center"
-          style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(125,211,252,0.08))' }}>
-          <p className="font-display text-lg font-medium italic">
-            "Your voice improved 17 points in one week. That's not small — that's extraordinary effort turning into real change."
+      {noData ? (
+        // Empty state
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card p-12 text-center"
+        >
+          <div className="text-6xl mb-4">📊</div>
+          <h2 className="font-display text-2xl font-bold mb-2">No data yet</h2>
+          <p className="text-sm max-w-md mx-auto mb-6" style={{ color: 'var(--text-muted)' }}>
+            Complete your first speech analysis session and your report will appear here automatically — with real charts, scores, and AI recommendations.
           </p>
-          <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>— Your FluentAI Coach</p>
-        </div>
-      </div>
+          <a href="/analysis" className="btn-primary inline-block px-8 py-3">
+            Start first session →
+          </a>
+        </motion.div>
+      ) : (
+        <>
+          {/* Report preview */}
+          <div className="glass-card p-8 mb-6"
+            style={{ border: '2px solid rgba(139, 92, 246, 0.2)' }}>
 
-      {/* Past reports */}
-      <div className="glass-card p-6">
-        <h2 className="font-semibold mb-4">Past Reports</h2>
-        <div className="space-y-3">
-          {[
-            { week: 'Feb 9–15, 2026', score: 74, improvement: '+12%' },
-            { week: 'Feb 2–8, 2026', score: 66, improvement: '+8%' },
-            { week: 'Jan 26 – Feb 1, 2026', score: 61, improvement: '+5%' },
-            { week: 'Jan 19–25, 2026', score: 58, improvement: 'Baseline' }
-          ].map((r, i) => (
-            <div key={i} className="flex items-center justify-between p-4 rounded-xl"
-              style={{ background: 'rgba(139,92,246,0.04)' }}>
+            {/* Header row */}
+            <div className="flex items-start justify-between mb-6">
               <div>
-                <div className="font-medium text-sm">{r.week}</div>
-                <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Confidence Score: {r.score} · {r.improvement}
+                <div className="badge badge-purple mb-2 inline-flex">
+                  {getWeekRange()}
+                </div>
+                <h2 className="font-display text-2xl font-bold">
+                  {current.name ? `${current.name.split(' ')[0]}'s Report` : 'Your Report'}
+                </h2>
+                <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {current.total_sessions} sessions completed
+                  {current.streak > 0 && ` · ${current.streak}-day streak 🔥`}
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="font-display text-5xl font-bold"
+                  style={{ color: current.confidence >= 75 ? '#22c55e' : current.confidence >= 50 ? '#f59e0b' : '#8b5cf6' }}>
+                  {current.confidence > 0 ? current.confidence : '—'}
+                </div>
+                <div className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Confidence Score</div>
+                {current.improvement > 0 && (
+                  <div className="badge badge-green mt-1 inline-flex">+{current.improvement} from baseline</div>
+                )}
+                {current.improvement < 0 && (
+                  <div className="badge badge-purple mt-1 inline-flex">{current.improvement} from baseline</div>
+                )}
+              </div>
+            </div>
+
+            {/* Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              {[
+                {
+                  label: 'Fluency Rate',
+                  value: current.fluency > 0 ? `${current.fluency}%` : '—',
+                  note: current.fluency >= 75 ? 'great' : current.fluency > 0 ? 'improving' : 'do a session'
+                },
+                {
+                  label: 'Improvement',
+                  value: current.improvement > 0
+                    ? `+${current.improvement}`
+                    : current.improvement < 0 ? `${current.improvement}` : '—',
+                  note: current.improvement > 0 ? 'vs baseline' : 'keep going'
+                },
+                {
+                  label: 'Sessions',
+                  value: current.sessions > 0 ? current.sessions : '0',
+                  note: 'this week'
+                },
+                {
+                  label: 'Current Level',
+                  value: `Lv ${current.level}`,
+                  note: `${current.xp} XP total`
+                }
+              ].map((m, i) => (
+                <div key={m.label} className="p-4 rounded-xl text-center"
+                  style={{ background: 'rgba(139,92,246,0.05)' }}>
+                  <div className="font-display text-xl font-bold">{m.value}</div>
+                  <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{m.label}</div>
+                  <div className="text-xs mt-1 font-medium text-green-500">{m.note}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Charts */}
+            <div className="grid md:grid-cols-2 gap-6 mb-8">
+
+              {/* Fluency line chart */}
+              <div>
+                <h3 className="font-semibold mb-3 text-sm">Fluency this week</h3>
+                {current.weekly_data?.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={current.weekly_data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(139,92,246,0.1)" />
+                      <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="fluency" stroke="#8b5cf6" strokeWidth={2.5}
+                        dot={{ fill: '#8b5cf6', r: 4 }} name="Fluency %" connectNulls />
+                      <Line type="monotone" dataKey="confidence" stroke="#22c55e" strokeWidth={2}
+                        dot={{ fill: '#22c55e', r: 3 }} strokeDasharray="4 4" name="Confidence" connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-44 flex items-center justify-center rounded-xl"
+                    style={{ background: 'rgba(139,92,246,0.04)' }}>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      No sessions this week yet
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Radar chart */}
+              <div>
+                <h3 className="font-semibold mb-3 text-sm">
+                  Speech profile
+                  {current.radar_data?.some(r => r.previous > 0) && (
+                    <span className="text-xs ml-2 font-normal" style={{ color: 'var(--text-muted)' }}>
+                      vs last week
+                    </span>
+                  )}
+                </h3>
+                {current.radar_data?.some(r => r.current > 0) ? (
+                  <ResponsiveContainer width="100%" height={180}>
+                    <RadarChart data={current.radar_data}>
+                      <PolarGrid stroke="rgba(139,92,246,0.2)" />
+                      <PolarAngleAxis dataKey="metric" tick={{ fontSize: 10 }} />
+                      <Radar dataKey="current" name="This week"
+                        stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.25} strokeWidth={2} />
+                      {current.radar_data.some(r => r.previous > 0) && (
+                        <Radar dataKey="previous" name="Last week"
+                          stroke="#d1d5db" fill="#d1d5db" fillOpacity={0.1}
+                          strokeWidth={1.5} strokeDasharray="4 4" />
+                      )}
+                    </RadarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-44 flex items-center justify-center rounded-xl"
+                    style={{ background: 'rgba(139,92,246,0.04)' }}>
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Complete sessions to see speech profile
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recommendations */}
+            {current.recommendations?.length > 0 && (
+              <div className="mb-6">
+                <h3 className="font-semibold mb-3">
+                  What to focus on next
+                </h3>
+                <div className="space-y-2">
+                  {current.recommendations.map((r, i) => (
+                    <div key={i} className="flex gap-3 p-3 rounded-xl text-sm"
+                      style={{ background: 'rgba(134,239,172,0.06)' }}>
+                      <span className="text-green-500 flex-shrink-0">→</span>
+                      <span>{r}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <button onClick={() => toast.success('Downloading report...')}
-                className="btn-secondary text-xs py-2 px-4">
-                Download
-              </button>
+            )}
+
+            {/* Goals */}
+            {current.primary_goals?.length > 0 && (
+              <div className="mb-6 p-4 rounded-xl"
+                style={{ background: 'rgba(139,92,246,0.04)' }}>
+                <p className="text-sm font-medium mb-2">Practising for:</p>
+                <div className="flex flex-wrap gap-2">
+                  {current.primary_goals.map(g => (
+                    <span key={g} className="badge badge-purple text-xs">{g}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Motivational quote */}
+            <div className="p-5 rounded-xl text-center"
+              style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(125,211,252,0.08))' }}>
+              <p className="font-display text-base font-medium italic" style={{ color: 'var(--text)' }}>
+                {current.improvement > 10
+                  ? `"${current.improvement} points of growth. That's what showing up looks like."`
+                  : current.sessions > 0
+                  ? `"${current.sessions} session${current.sessions > 1 ? 's' : ''} this week. Every one of them matters."`
+                  : `"The hardest part is starting. You've already done that."`
+                }
+              </p>
+              <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>— Your FluentAI Coach</p>
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+
+          {/* Past reports */}
+          <div className="glass-card p-6">
+            <h2 className="font-semibold text-lg mb-1">Past weeks</h2>
+            <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
+              {pastReports.length > 0
+                ? 'Your history — download any week as a PDF.'
+                : 'Past reports will appear here as you complete more sessions.'}
+            </p>
+
+            {pastReports.length > 0 ? (
+              <div className="space-y-3">
+                {pastReports.map((r, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="flex items-center justify-between p-4 rounded-xl"
+                    style={{ background: 'rgba(139,92,246,0.04)' }}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm"
+                        style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}>
+                        {r.confidence > 0 ? r.confidence : '—'}
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm">{r.week}</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {r.sessions} session{r.sessions !== 1 ? 's' : ''} ·{' '}
+                          {r.fluency > 0 ? `${r.fluency}% fluency · ` : ''}
+                          <span className={r.improvement?.startsWith('+') ? 'text-green-500' : ''}>
+                            {r.improvement}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => toast.success('Downloading report...')}
+                      className="btn-secondary text-xs py-2 px-4"
+                    >
+                      Download
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
+                <div className="text-3xl mb-2">📅</div>
+                <p className="text-sm">Keep practising — your history will build up here week by week.</p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

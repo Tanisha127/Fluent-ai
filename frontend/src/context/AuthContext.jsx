@@ -60,13 +60,20 @@ export const AuthProvider = ({ children }) => {
     setUser(prev => ({ ...prev, ...updates }))
   }
 
+  // ✅ NEW — refreshes user from DB after a session completes
+  const refreshUser = async () => {
+    try {
+      const res = await axios.get('/api/auth/me')
+      setUser(res.data.user)
+    } catch {}
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )
 }
-
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext)

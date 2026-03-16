@@ -11,19 +11,96 @@ router.post('/speech', auth, upload.single('audio'), async (req, res) => {
     const { transcript, expected_text, duration } = req.body
     const result = await analyzeSpeech({ transcript, expected_text, duration })
 
-    // Save to DB if available
+    let xp_earned = 25
+    let savedAnalysis = null
+
+    // Save to SpeechAnalysis collection
     try {
       const SpeechAnalysis = require('../models/SpeechAnalysis')
       const analysis = new SpeechAnalysis({
         user_id: req.userId,
-        transcript, expected_text,
+        transcript,
+        expected_text,
         duration_seconds: parseInt(duration),
         ...result
       })
-      await analysis.save()
-    } catch {}
+      savedAnalysis = await analysis.save()
+    } catch (err) {
+      console.log('SpeechAnalysis save error:', err.message)
+    }
 
-    res.json({ result, xp_earned: 25 })
+    // ✅ UPDATE USER STATS — this was completely missing before
+    try {
+      const User = require('../models/User')
+      const user = await User.findById(req.userId)
+
+      if (user) {
+        // Update session count
+        user.total_sessions = (user.total_sessions || 0) + 1
+
+        // Update confidence score (rolling average)
+        if (result.confidence_score) {
+          if (!user.current_confidence || user.current_confidence === 0) {
+            // First session — set as baseline too
+            user.current_confidence = result.confidence_score
+            user.baseline_confidence = result.confidence_score
+          } else {
+            // Rolling average — weight recent sessions more
+            user.current_confidence = Math.round(
+              (user.current_confidence * 0.7) + (result.confidence_score * 0.3)
+            )
+          }
+        }
+
+        // Update practice minutes
+        const durationMins = Math.round((parseInt(duration) || 30) / 60)
+        user.total_practice_minutes = (user.total_practice_minutes || 0) + durationMins
+
+        // Update streak
+        user.updateStreak()
+
+        // Add XP — more XP for better performance
+        xp_earned = 25 + Math.round((result.confidence_score || 50) / 10)
+        const xpResult = user.addXP(xp_earned)
+
+        // Add badges for milestones
+        if (user.total_sessions === 1 && !user.badges.includes('first-steps')) {
+          user.badges.push('first-steps')
+        }
+        if (user.streak >= 7 && !user.badges.includes('on-fire')) {
+          user.badges.push('on-fire')
+        }
+        if (user.total_sessions >= 10 && !user.badges.includes('dedicated')) {
+          user.badges.push('dedicated')
+        }
+        if (user.current_confidence >= 80 && !user.badges.includes('confident')) {
+          user.badges.push('confident')
+        }
+
+        await user.save()
+
+        console.log(`✅ User ${req.userId} updated — sessions: ${user.total_sessions}, confidence: ${user.current_confidence}, streak: ${user.streak}, xp: ${user.xp}`)
+
+        return res.json({
+          result,
+          xp_earned,
+          level_up: xpResult?.levelUp || false,
+          new_level: xpResult?.newLevel,
+          user_stats: {
+            total_sessions: user.total_sessions,
+            current_confidence: user.current_confidence,
+            streak: user.streak,
+            xp: user.xp,
+            level: user.level,
+            badges: user.badges
+          }
+        })
+      }
+    } catch (userErr) {
+      console.log('User update error:', userErr.message)
+    }
+
+    res.json({ result, xp_earned })
   } catch (err) {
     res.status(500).json({ message: 'Analysis failed', error: err.message })
   }
@@ -42,7 +119,6 @@ router.get('/history', auth, async (req, res) => {
 })
 
 async function analyzeSpeech({ transcript, expected_text, duration }) {
-  // Try OpenAI GPT analysis if API key available
   if (process.env.OPENAI_API_KEY && transcript) {
     try {
       const { OpenAI } = require('openai')
@@ -166,6 +242,5 @@ function demoResult(duration) {
   }
   return { ...r, radar: buildRadar(r) }
 }
-
 
 module.exports = router

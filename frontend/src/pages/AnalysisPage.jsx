@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import axios from 'axios'
 import toast from 'react-hot-toast'
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from 'recharts'
-
+import { useAuth } from '../context/AuthContext'
 
 const SAMPLE_PARAGRAPHS = [
   {
@@ -34,12 +34,9 @@ const ConfidenceGauge = ({ score }) => {
             <stop offset="100%" stopColor="#22c55e" />
           </linearGradient>
         </defs>
-        {/* Background arc */}
         <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#e5e7eb" strokeWidth="16" strokeLinecap="round" />
-        {/* Colored arc */}
         <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGrad)" strokeWidth="16"
           strokeLinecap="round" strokeDasharray={`${score * 2.51} 251`} />
-        {/* Needle */}
         <line
           x1="100" y1="100"
           x2={100 + 65 * Math.cos(((-180 + score * 1.8) * Math.PI) / 180)}
@@ -82,12 +79,17 @@ const WaveAnimation = ({ isRecording }) => (
 )
 
 export default function AnalysisPage() {
+  const { refreshUser, updateUser } = useAuth() // ✅ get refreshUser
+
   const [selectedParagraph, setSelectedParagraph] = useState(0)
   const [isRecording, setIsRecording] = useState(false)
   const [analysisResult, setAnalysisResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [timeElapsed, setTimeElapsed] = useState(0)
   const [transcript, setTranscript] = useState('')
+  const [xpEarned, setXpEarned] = useState(null)
+  const [levelUp, setLevelUp] = useState(null)
+
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const timerRef = useRef(null)
@@ -107,9 +109,10 @@ export default function AnalysisPage() {
       setIsRecording(true)
       setTimeElapsed(0)
       setTranscript('')
+      setXpEarned(null)
+      setLevelUp(null)
       timerRef.current = setInterval(() => setTimeElapsed(t => t + 1), 1000)
 
-      // Web Speech API for live transcript
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition
         recognitionRef.current = new SR()
@@ -133,9 +136,7 @@ export default function AnalysisPage() {
     clearInterval(timerRef.current)
     setIsRecording(false)
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-    }
+    if (recognitionRef.current) recognitionRef.current.stop()
 
     mediaRecorderRef.current?.stop()
     mediaRecorderRef.current?.stream?.getTracks().forEach(t => t.stop())
@@ -144,7 +145,6 @@ export default function AnalysisPage() {
 
     setLoading(true)
     try {
-      // Send to backend for analysis
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
       const formData = new FormData()
       formData.append('audio', audioBlob, 'recording.webm')
@@ -155,11 +155,31 @@ export default function AnalysisPage() {
       const res = await axios.post('/api/analysis/speech', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
+
       setAnalysisResult(res.data.result)
-      toast.success('Analysis complete! 🎉')
+
+      // ✅ Update XP and level up info
+      if (res.data.xp_earned) setXpEarned(res.data.xp_earned)
+      if (res.data.level_up) setLevelUp(res.data.new_level)
+
+      // ✅ Update user stats in AuthContext so dashboard shows new numbers immediately
+      if (res.data.user_stats) {
+        updateUser(res.data.user_stats)
+      } else {
+        // Fallback — refresh from DB
+        await refreshUser()
+      }
+
+      if (res.data.level_up) {
+        toast.success(`🎉 Level up! You're now level ${res.data.new_level}!`)
+      } else {
+        toast.success(`Analysis complete! +${res.data.xp_earned || 25} XP 🎉`)
+      }
+
     } catch (err) {
       // Demo fallback
-      setAnalysisResult(generateDemoResult())
+      const demoResult = generateDemoResult()
+      setAnalysisResult(demoResult)
       toast.success('Analysis complete! (Demo mode)')
     } finally {
       setLoading(false)
@@ -207,7 +227,6 @@ export default function AnalysisPage() {
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Recording Panel */}
         <div className="space-y-4">
-          {/* Paragraph selector */}
           <div className="glass-card p-5">
             <h3 className="font-semibold mb-3">Choose a Reading Passage</h3>
             <div className="space-y-2">
@@ -232,7 +251,6 @@ export default function AnalysisPage() {
             </div>
           </div>
 
-          {/* Reading text */}
           <div className="glass-card p-5">
             <h3 className="font-semibold mb-3">Read this aloud:</h3>
             <p className="text-base leading-loose p-4 rounded-xl"
@@ -241,7 +259,6 @@ export default function AnalysisPage() {
             </p>
           </div>
 
-          {/* Recording controls */}
           <div className="glass-card p-6 text-center">
             <WaveAnimation isRecording={isRecording} />
 
@@ -263,7 +280,7 @@ export default function AnalysisPage() {
               {!isRecording ? (
                 <motion.button
                   onClick={startRecording}
-                  className="btn-primary px-8 py-4 text-base recording-pulse"
+                  className="btn-primary px-8 py-4 text-base"
                   style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -284,7 +301,7 @@ export default function AnalysisPage() {
             </div>
 
             <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-              Speak naturally. Take pauses when needed. 
+              Speak naturally. Take pauses when needed.
             </p>
           </div>
         </div>
@@ -313,6 +330,24 @@ export default function AnalysisPage() {
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-4"
               >
+                {/* XP earned banner */}
+                {xpEarned && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="glass-card p-4 text-center"
+                    style={{ background: 'rgba(134,239,172,0.1)', border: '2px solid rgba(134,239,172,0.3)' }}
+                  >
+                    <div className="text-2xl mb-1">{levelUp ? '🎉' : '⭐'}</div>
+                    <p className="font-semibold text-green-600">
+                      {levelUp ? `Level up! You're now Level ${levelUp}!` : `+${xpEarned} XP earned!`}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Session saved — your dashboard has been updated
+                    </p>
+                  </motion.div>
+                )}
+
                 {/* Confidence Score */}
                 <div className="glass-card p-6 text-center">
                   <h3 className="font-semibold mb-4">Your Confidence Score</h3>
