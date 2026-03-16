@@ -10,6 +10,7 @@ const ROOMS = [
   { id: 'anxiety',   name: 'Hard Days',        desc: 'No performance needed. Just honest sharing.',     members: 41, active: true,  emoji: '🫂' }
 ]
 
+
 const SAMPLE_POSTS = [
   {
     id: 1,

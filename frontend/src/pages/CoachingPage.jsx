@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 
+
 const COACHING_HINTS = [
   { type: 'slow',    message: 'Slow down a touch — you\'re rushing',         color: '#f59e0b', icon: '🐢' },
   { type: 'breathe', message: 'Pause. Take a breath. There\'s no hurry.',    color: '#7dd3fc', icon: '💨' },

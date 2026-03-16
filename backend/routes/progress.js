@@ -15,6 +15,7 @@ router.get('/summary', auth, async (req, res) => {
   })
 })
 
+
 router.post('/log-situation', auth, async (req, res) => {
   const { situation, emotion, fluency_felt, notes } = req.body
   res.json({ saved: true, message: 'Situation logged! This helps the AI understand your patterns.' })

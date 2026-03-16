@@ -47,6 +47,7 @@ router.post('/respond', auth, async (req, res) => {
       { role: 'user', content: message }
     ]
 
+    
     // Try OpenAI first
     if (process.env.OPENAI_API_KEY) {
       try {

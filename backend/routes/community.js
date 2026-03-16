@@ -29,4 +29,5 @@ router.post('/posts/:id/like', auth, async (req, res) => {
   res.json({ likes: post?.likes || 0 })
 })
 
+
 module.exports = router

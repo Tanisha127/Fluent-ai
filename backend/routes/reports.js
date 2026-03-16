@@ -15,6 +15,7 @@ router.post('/generate', auth, async (req, res) => {
 
     const colors = { purple: '#8b5cf6', teal: '#7dd3fc', green: '#22c55e', dark: '#1e1b4b', gray: '#6b7280' }
 
+    
     // Header
     doc.rect(0, 0, 612, 120).fill(colors.purple)
     doc.fillColor('white').font('Helvetica-Bold').fontSize(28)

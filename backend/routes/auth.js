@@ -20,8 +20,14 @@ demoUsers.set('demo@fluent.ai', {
   streak: 14,
   total_sessions: 47,
   current_confidence: 82,
-  badges: ['first-steps', 'on-fire', 'actor', 'dedicated']
+  badges: ['first-steps', 'on-fire', 'actor', 'dedicated'],
+  faceDescriptor: null
 })
+
+// ─── helper: euclidean distance between two face descriptors ───
+function faceDistance(d1, d2) {
+  return Math.sqrt(d1.reduce((sum, val, i) => sum + Math.pow(val - d2[i], 2), 0))
+}
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
@@ -31,7 +37,6 @@ router.post('/register', async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email and password are required' })
     }
-
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' })
     }
@@ -47,7 +52,7 @@ router.post('/register', async (req, res) => {
       const token = generateToken(user._id.toString())
       return res.status(201).json({ token, user: user.toSafeObject() })
     } catch (dbErr) {
-      // Fallback to in-memory
+      // fallback to in-memory
     }
 
     if (demoUsers.has(email)) {
@@ -56,15 +61,18 @@ router.post('/register', async (req, res) => {
 
     const user = {
       _id: `user-${Date.now()}`,
-      name, email, anonymous_name: anonymous_name || `User${Date.now()}`,
-      age, stammering_level, primary_goals: primary_goals || [],
+      name, email,
+      anonymous_name: anonymous_name || `User${Date.now()}`,
+      age, stammering_level,
+      primary_goals: primary_goals || [],
       xp: 0, level: 1, streak: 0, total_sessions: 0,
       current_confidence: 0, badges: [],
+      faceDescriptor: null,
       password_plain: password
     }
     demoUsers.set(email, user)
     const token = generateToken(user._id)
-    const { password_plain, ...safeUser } = user
+    const { password_plain, faceDescriptor, ...safeUser } = user
     res.status(201).json({ token, user: safeUser })
   } catch (err) {
     res.status(500).json({ message: 'Registration failed', error: err.message })
@@ -97,7 +105,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password' })
     }
     const token = generateToken(user._id)
-    const { password_plain, ...safeUser } = user
+    const { password_plain, faceDescriptor, ...safeUser } = user
     res.json({ token, user: safeUser })
   } catch (err) {
     res.status(500).json({ message: 'Login failed', error: err.message })
@@ -107,20 +115,102 @@ router.post('/login', async (req, res) => {
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    // Try MongoDB
     try {
       const User = require('../models/User')
       const user = await User.findById(req.userId)
       if (user) return res.json({ user: user.toSafeObject() })
     } catch {}
 
-    // Fallback: find by ID in demo users
     const user = [...demoUsers.values()].find(u => u._id === req.userId)
     if (!user) return res.status(404).json({ message: 'User not found' })
-    const { password_plain, ...safeUser } = user
+    const { password_plain, faceDescriptor, ...safeUser } = user
     res.json({ user: safeUser })
   } catch (err) {
     res.status(500).json({ message: 'Error fetching user' })
+  }
+})
+
+// ✅ POST /api/face/register — save face descriptor to user
+router.post('/face/register', auth, async (req, res) => {
+  try {
+    const { descriptor } = req.body
+
+    if (!descriptor || descriptor.length !== 128) {
+      return res.status(400).json({ message: 'Invalid face descriptor' })
+    }
+
+    // Try MongoDB
+    try {
+      const User = require('../models/User')
+      await User.findByIdAndUpdate(req.userId, { faceDescriptor: descriptor })
+      return res.json({ success: true, message: 'Face registered!' })
+    } catch {}
+
+    // Fallback in-memory
+    const user = [...demoUsers.values()].find(u => u._id === req.userId)
+    if (user) user.faceDescriptor = descriptor
+    res.json({ success: true, message: 'Face registered! (demo mode)' })
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to register face', error: err.message })
+  }
+})
+
+// ✅ POST /api/face/login — compare descriptor and return token
+router.post('/face/login', async (req, res) => {
+  try {
+    const { descriptor } = req.body
+
+    if (!descriptor || descriptor.length !== 128) {
+      return res.status(400).json({ message: 'Invalid face descriptor' })
+    }
+
+    const THRESHOLD = 0.5
+    let bestMatch = null
+    let bestDistance = Infinity
+
+    // Try MongoDB
+    try {
+      const User = require('../models/User')
+      const users = await User.find({ faceDescriptor: { $exists: true, $ne: null } })
+
+      for (const user of users) {
+        if (!user.faceDescriptor || user.faceDescriptor.length !== 128) continue
+        const distance = faceDistance(descriptor, user.faceDescriptor)
+        if (distance < bestDistance) {
+          bestDistance = distance
+          bestMatch = user
+        }
+      }
+
+      if (bestMatch && bestDistance <= THRESHOLD) {
+        const token = generateToken(bestMatch._id.toString())
+        return res.json({ success: true, token, user: bestMatch.toSafeObject() })
+      }
+
+      if (users.length > 0) {
+        return res.status(401).json({ message: 'Face not recognised. Please use password login.' })
+      }
+    } catch {}
+
+    // Fallback in-memory
+    for (const user of demoUsers.values()) {
+      if (!user.faceDescriptor || user.faceDescriptor.length !== 128) continue
+      const distance = faceDistance(descriptor, user.faceDescriptor)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        bestMatch = user
+      }
+    }
+
+    if (!bestMatch || bestDistance > THRESHOLD) {
+      return res.status(401).json({ message: 'Face not recognised. Please use password login.' })
+    }
+
+    const token = generateToken(bestMatch._id)
+    const { password_plain, faceDescriptor, ...safeUser } = bestMatch
+    res.json({ success: true, token, user: safeUser })
+  } catch (err) {
+    res.status(500).json({ message: 'Face login failed', error: err.message })
   }
 })
 

@@ -5,6 +5,7 @@ import {
   ResponsiveContainer, BarChart, Bar, AreaChart, Area, Legend
 } from 'recharts'
 
+
 const monthlyData = [
   { week: 'W1', fluency: 52, anxiety: 72, confidence: 45 },
   { week: 'W2', fluency: 58, anxiety: 65, confidence: 50 },

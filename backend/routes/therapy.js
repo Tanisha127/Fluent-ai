@@ -16,6 +16,7 @@ router.get('/plan', auth, async (req, res) => {
   })
 })
 
+
 router.post('/complete', auth, async (req, res) => {
   const { exercise_id, duration_seconds } = req.body
   res.json({ success: true, xp_earned: 25, message: 'Exercise completed! Great work! 🎉' })

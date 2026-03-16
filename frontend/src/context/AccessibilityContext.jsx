@@ -34,4 +34,5 @@ export const AccessibilityProvider = ({ children }) => {
   )
 }
 
+
 export const useAccessibility = () => useContext(AccessibilityContext)

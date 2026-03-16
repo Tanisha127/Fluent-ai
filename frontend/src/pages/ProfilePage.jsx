@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useAccessibility } from '../context/AccessibilityContext'
 import toast from 'react-hot-toast'
 
+
 const BADGES = [
   { icon: '🌱', title: 'First Steps', desc: 'Completed first analysis', earned: true },
   { icon: '🔥', title: 'On Fire', desc: '7-day streak', earned: true },

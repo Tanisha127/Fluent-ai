@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import toast from 'react-hot-toast'
 
+
 const weeklyData = [
   { day: 'Mon', fluency: 68, sessions: 2, confidence: 65 },
   { day: 'Tue', fluency: 72, sessions: 3, confidence: 70 },

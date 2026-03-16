@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import { useAuth } from '../context/AuthContext'
 
+
 const weekData = [
   { day: 'Mon', fluency: 58 },
   { day: 'Tue', fluency: 62 },

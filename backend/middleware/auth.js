@@ -16,6 +16,7 @@ const auth = (req, res, next) => {
   }
 }
 
+
 const generateToken = (userId) => {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' })
 }

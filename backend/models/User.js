@@ -10,6 +10,12 @@ const userSchema = new mongoose.Schema({
   stammering_level: { type: String, enum: ['Mild', 'Moderate', 'Severe', 'Prefer not to say'], default: 'Moderate' },
   primary_goals: [{ type: String }],
 
+  // ✅ NEW — Face login
+  faceDescriptor: {
+    type: [Number],
+    default: null
+  },
+
   // Gamification
   xp: { type: Number, default: 0 },
   level: { type: Number, default: 1 },
@@ -79,6 +85,7 @@ userSchema.methods.updateStreak = function() {
 userSchema.methods.toSafeObject = function() {
   const obj = this.toObject()
   delete obj.password
+  delete obj.faceDescriptor  // never send face data to frontend
   return obj
 }
 

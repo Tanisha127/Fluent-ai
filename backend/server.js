@@ -45,7 +45,7 @@ app.use('/api/community', require('./routes/community'))
 app.use('/api/reports', require('./routes/reports'))
 app.use('/api/progress', require('./routes/progress'))
 app.use('/api/users', require('./routes/users'))
-
+app.use('/api/face', require('./routes/face'))
 // ================= HEALTH CHECK =================
 app.get('/api/health', (req, res) => {
   res.json({
