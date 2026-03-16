@@ -141,3 +141,4 @@ CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_sessions_user ON therapy_sessions(user_id, created_at);
 CREATE INDEX idx_posts_room ON community_posts(room, created_at DESC);
 CREATE INDEX idx_logs_situation ON situation_logs(user_id, situation);
+
