@@ -3,26 +3,28 @@ const router = express.Router()
 const { auth } = require('../middleware/auth')
 
 const SCENARIO_PROMPTS = {
-  job_interview: `You are a professional, friendly HR interviewer conducting a job interview. 
-Ask realistic interview questions one at a time. Keep questions clear and not too long.
-When the candidate answers, respond naturally as an interviewer would — with follow-ups or the next question.
-Be encouraging but professional. Never break character. Never mention speech or stammering.`,
+  job_interview: `You are a professional, friendly HR interviewer conducting a job interview.
+You MUST read the candidate's last answer carefully and ask a relevant follow-up question based on what they specifically said.
+Ask ONE question at a time. Keep your response under 3 sentences.
+Be encouraging but professional. Never break character. Never mention speech or stammering.
+If they mention a specific skill, project, or experience — dig into THAT. Do not ask generic questions.`,
 
   university_viva: `You are an academic examiner for a PhD/Masters viva voce examination.
-Ask probing questions about research methodology, findings, and contributions.
-Be formal but fair. One question at a time. React naturally to their answers.`,
+You MUST respond directly to what the student just said and ask ONE probing follow-up question about it.
+Be formal but fair. React to their specific answer — if they mention a methodology, challenge it. If they mention findings, ask for implications.
+Keep your response under 3 sentences.`,
 
   presentation: `You are an engaged team member listening to a presentation.
-Ask clarifying questions and make brief encouraging comments between questions.
-Keep the session focused and professional.`,
+React to what was just said, then ask ONE specific clarifying question about that point.
+Keep it professional and concise — under 3 sentences.`,
 
   phone_call: `You are a customer service representative taking a call.
-Respond naturally as a phone call would go. Ask one thing at a time.
-Be helpful and patient. Keep your responses concise.`,
+Respond naturally and helpfully to exactly what the caller just said.
+Ask only what you need next to help them. Keep responses concise — under 2 sentences.`,
 
   social: `You are a friendly person at a networking event meeting someone new.
-Have a natural, warm conversation. Ask one question at a time.
-Keep it light, friendly and conversational.`
+Respond warmly and naturally to what they just said, then ask ONE follow-up question about something specific they mentioned.
+Keep it light and conversational — under 2 sentences.`
 }
 
 // POST /api/roleplay/respond
@@ -30,11 +32,15 @@ router.post('/respond', auth, async (req, res) => {
   try {
     const { scenario, message, history } = req.body
 
+    if (!message || !message.trim()) {
+      return res.status(400).json({ message: 'No message provided' })
+    }
+
     const systemPrompt = SCENARIO_PROMPTS[scenario] || SCENARIO_PROMPTS.job_interview
 
-    // Build conversation history for AI
+    // Build full conversation history INCLUDING the new user message
     const conversationHistory = [
-      ...history.slice(-8).map(m => ({
+      ...history.slice(-10).map(m => ({
         role: m.role === 'ai' ? 'assistant' : 'user',
         content: m.content
       })),
@@ -63,7 +69,7 @@ router.post('/respond', auth, async (req, res) => {
       }
     }
 
-    // ✅ FIX: Try Anthropic as fallback — actually reads what the user said
+    // Try Anthropic as fallback
     if (process.env.ANTHROPIC_API_KEY) {
       try {
         const fetch = require('node-fetch')
@@ -91,11 +97,12 @@ router.post('/respond', auth, async (req, res) => {
       }
     }
 
-    // Last resort: static fallback (only used if both AI APIs fail)
-    const fallback = getFallbackResponse(scenario, history.length)
+    // Last resort fallback — still tries to be relevant
+    const fallback = getFallbackResponse(scenario, history.length, message)
     res.json({ response: fallback })
 
   } catch (err) {
+    console.error('Roleplay route error:', err)
     res.status(500).json({ message: 'Roleplay error', error: err.message })
   }
 })
@@ -104,49 +111,50 @@ router.post('/respond', auth, async (req, res) => {
 router.post('/save-session', auth, async (req, res) => {
   try {
     const { scenario, exchanges, avg_fluency, duration, messages } = req.body
-    // Save session stats
     res.json({ saved: true, xp_earned: 80 + exchanges * 10 })
   } catch (err) {
     res.status(500).json({ message: 'Failed to save session' })
   }
 })
 
-function getFallbackResponse(scenario, historyLength) {
+function getFallbackResponse(scenario, historyLength, userMessage) {
+  const snippet = userMessage.slice(0, 60).trim()
+
   const responses = {
     job_interview: [
-      "That's a great introduction. Could you tell me about your most significant professional achievement in the past year?",
-      "Interesting. How do you typically handle working under tight deadlines with multiple competing priorities?",
-      "I appreciate that. Can you walk me through a situation where you had a conflict with a colleague and how you resolved it?",
-      "Excellent. What specific skills or experiences do you believe make you the strongest candidate for this position?",
-      "Very good. Where do you see your career heading in the next three to five years?",
-      "Thank you for sharing that. Do you have any questions about the role or our team that you'd like to ask?"
+      `That's interesting — you mentioned "${snippet}". Can you walk me through a specific example of that in action?`,
+      `I appreciate you sharing that. When you say "${snippet}" — what was the outcome, and what did you learn?`,
+      `Good point. How has the experience you just described shaped the way you approach your work today?`,
+      `That shows real initiative. What specific skills did you develop through that, and how are they relevant to this role?`,
+      `Thank you for that. Where do you see yourself building on what you just described in the next three to five years?`,
+      `We're almost done — do you have any questions for us about the role or the team?`
     ],
     phone_call: [
-      "I'd be happy to help you with that. Can you give me your account reference number?",
-      "I see. And what specifically would you like to change or update today?",
-      "I can certainly assist with that. Let me just verify a few details first — could you confirm your date of birth?",
-      "That's been processed for you. Is there anything else I can help you with today?",
-      "Of course. Our policy for that would be... Could you hold briefly while I check the details?"
+      `I understand. Can you give me a bit more detail about "${snippet}" so I can help you better?`,
+      `Got it. Let me check that for you — can you confirm your account number while I look into this?`,
+      `I see. And is there anything else related to "${snippet}" I should know before I process this?`,
+      `That's been noted. Is there anything else I can help you with today?`,
+      `Of course. Our policy on that is straightforward — let me walk you through it step by step.`
     ],
     university_viva: [
-      "Interesting. Can you elaborate on why you chose this particular research methodology over alternatives?",
-      "How do your findings address the gap in the existing literature you identified in your introduction?",
-      "What do you consider the main limitations of your study, and how do they affect the generalizability of your conclusions?",
-      "If you were to extend this research, what would be your primary next steps and why?",
-      "How would you respond to the argument that your sample size limits the statistical power of your conclusions?"
+      `You mentioned "${snippet}" — can you elaborate on how that supports your central argument?`,
+      `Interesting. What are the main limitations of the approach you just described?`,
+      `How does what you just said address the gap in the existing literature you identified?`,
+      `If you were to extend this research, how would the point you just made influence your next steps?`,
+      `How would you respond to a critic who argues that "${snippet}" is not sufficient evidence for your conclusions?`
     ],
     social: [
-      "Oh interesting! What kind of projects are you working on these days?",
-      "I've heard great things about that field! How did you end up getting into it?",
-      "That's really cool. Are you based here locally or did you travel for this event?",
-      "Nice! Have you been to any of these events before? I'm still getting used to the networking scene.",
-      "Ha, that's relatable! So what's the most exciting thing happening in your work right now?"
+      `Oh that's cool — you mentioned "${snippet}". How did you get into that?`,
+      `Really? That's interesting! What's the most exciting part of what you just described?`,
+      `Ha, I can relate to that. So what does a typical day look like for you in that space?`,
+      `Nice! Are you based here locally or did you travel for this event?`,
+      `That's great to hear. Are you connected with many people in that field here tonight?`
     ],
     presentation: [
-      "Thanks for that overview. Could you elaborate on how you arrived at those projections?",
-      "That's a compelling point. How does this approach compare to what the competition is doing?",
-      "I'm curious about the timeline — what are the biggest risks to the schedule you've outlined?",
-      "This looks very promising! What resources would you need to move forward to the next phase?"
+      `Thanks for that point about "${snippet}". Can you walk us through the data behind it?`,
+      `Interesting. How does what you just presented compare to what competitors are doing?`,
+      `Good context. What are the biggest risks to the timeline you've just outlined?`,
+      `That's compelling — what resources would you need to move this to the next phase?`
     ]
   }
 

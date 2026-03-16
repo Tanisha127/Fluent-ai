@@ -87,6 +87,7 @@ export default function RoleplayPage() {
   const transcriptRef = useRef('')
   const messagesRef = useRef([])
   const liveMetricsRef = useRef(liveMetrics)
+  const elapsedTimeRef = useRef(0)
 
   useEffect(() => {
     messagesRef.current = messages
@@ -95,6 +96,10 @@ export default function RoleplayPage() {
   useEffect(() => {
     liveMetricsRef.current = liveMetrics
   }, [liveMetrics])
+
+  useEffect(() => {
+    elapsedTimeRef.current = elapsedTime
+  }, [elapsedTime])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -200,19 +205,23 @@ export default function RoleplayPage() {
       fluency: currentMetrics.fluency
     }
 
-    const currentMessages = messagesRef.current
+    // Capture messages BEFORE adding user message (this is the history to send)
+    const historyBeforeUser = messagesRef.current
+
+    // Now update state with user message
     setMessages(prev => [...prev, userMsg])
-    messagesRef.current = [...currentMessages, userMsg]
+    messagesRef.current = [...historyBeforeUser, userMsg]
     setIsAiTyping(true)
 
     try {
       const res = await axios.post('/api/roleplay/respond', {
         scenario: selectedScenario.id,
         message: transcript.trim(),
-        history: currentMessages.map(m => ({ role: m.role, content: m.content }))
+        // Send history WITHOUT the new user message — backend appends it
+        history: historyBeforeUser.map(m => ({ role: m.role, content: m.content }))
       })
 
-      await new Promise(r => setTimeout(r, 800))
+      await new Promise(r => setTimeout(r, 600))
 
       const aiMsg = {
         role: 'ai',
@@ -222,18 +231,49 @@ export default function RoleplayPage() {
       setMessages(prev => [...prev, aiMsg])
       messagesRef.current = [...messagesRef.current, aiMsg]
 
-    } catch {
-      await new Promise(r => setTimeout(r, 1000))
-      const demoResponses = [
-        "That's a great point. Could you elaborate on how you handled challenges in that situation?",
-        "Interesting. What specific skills do you believe make you stand out for this role?",
-        "I appreciate your answer. Let me ask you — where do you see yourself in five years?",
-        "Excellent. Can you walk me through a time you faced a difficult situation and how you resolved it?",
-        "Thank you for sharing that. Do you have any questions for us?"
-      ]
+    } catch (err) {
+      console.error('API call failed:', err)
+
+      // Smart client-side fallback that references what user said
+      await new Promise(r => setTimeout(r, 800))
+      const snippet = transcript.trim().slice(0, 50)
+      const smartFallbacks = {
+        job_interview: [
+          `You mentioned "${snippet}" — can you give me a specific example of that?`,
+          `That's a strong point. How did that experience prepare you for this role specifically?`,
+          `Interesting. What was the biggest challenge in what you just described, and how did you overcome it?`,
+          `Good. Can you quantify the impact of what you just talked about — numbers or outcomes?`,
+          `Thank you. Do you have any questions for us about the role or the team?`
+        ],
+        university_viva: [
+          `You mentioned "${snippet}" — how does that relate to your core thesis argument?`,
+          `Can you expand on the methodology behind what you just described?`,
+          `What are the limitations of the approach you just outlined?`,
+          `How does this finding contribute to the existing body of knowledge in your field?`
+        ],
+        presentation: [
+          `You mentioned "${snippet}" — what data supports that claim?`,
+          `How does that point connect to the overall business objective?`,
+          `What's the risk if this particular aspect doesn't go as planned?`
+        ],
+        phone_call: [
+          `I understand. Can you confirm your account details so I can look into "${snippet}" for you?`,
+          `Got it. Let me process that — is there anything else I can help with today?`,
+          `Of course. I'll make a note of that. Is the contact number we have on file still correct?`
+        ],
+        social: [
+          `Oh nice! You mentioned "${snippet}" — how did you get into that?`,
+          `That's really cool. What's the most exciting part of that for you right now?`,
+          `Ha, that's interesting! Are you based here locally?`
+        ]
+      }
+
+      const pool = smartFallbacks[selectedScenario.id] || smartFallbacks.job_interview
+      const fallbackContent = pool[Math.min(historyBeforeUser.length, pool.length - 1)]
+
       const aiMsg = {
         role: 'ai',
-        content: demoResponses[Math.floor(Math.random() * demoResponses.length)],
+        content: fallbackContent,
         timestamp: new Date()
       }
       setMessages(prev => [...prev, aiMsg])
@@ -243,7 +283,7 @@ export default function RoleplayPage() {
       setSessionStats(prev => ({
         exchanges: prev.exchanges + 1,
         avgFluency: Math.round((prev.avgFluency * prev.exchanges + currentMetrics.fluency) / (prev.exchanges + 1)),
-        duration: elapsedTime
+        duration: elapsedTimeRef.current
       }))
     }
   }
